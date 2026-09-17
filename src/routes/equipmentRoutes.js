@@ -45,5 +45,3 @@ equipmentRouter.get(
   validate({ params: equipmentIdParamsSchema }),
   equipmentController.getWeather,
 );
-
-// GET /equipment/:id/requests подключится в ветке feat/requests-crud.

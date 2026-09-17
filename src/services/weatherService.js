@@ -1,10 +1,6 @@
 import { env } from '../config/env.js';
 import { ExternalServiceError } from '../errors/index.js';
 
-// Правило пригодности окна для наружных работ: без осадков и ветер ниже
-// порога. Значения — константы конфигурации, как того требует задание;
-// вынесены сюда, а не в переменные окружения, поскольку не входят
-// в согласованный список env-переменных проекта (см. README).
 const MAX_PRECIPITATION_MM = 0;
 const MAX_WIND_SPEED_KMH = 30;
 

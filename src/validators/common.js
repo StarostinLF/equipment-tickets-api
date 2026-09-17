@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * ISO-дата (или дата-время) в виде строки.
- * allowFuture: false запрещает даты позже текущего момента (installedAt).
- */
 export function isoDate({ allowFuture = true } = {}) {
   let schema = z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), {
     message: 'Ожидается корректная ISO-дата',

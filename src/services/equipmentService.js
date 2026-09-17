@@ -41,8 +41,6 @@ export const equipmentService = {
 
   async remove(id) {
     await this.getById(id);
-    // Запрет удаления при наличии открытых заявок добавится вместе
-    // с requestRepository в ветке feat/requests-crud.
     await equipmentRepository.remove(id);
   },
 };

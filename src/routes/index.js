@@ -6,5 +6,3 @@ export const apiRouter = Router();
 
 apiRouter.use(healthRouter);
 apiRouter.use(equipmentRouter);
-
-// Роуты requests подключатся здесь в ветке feat/requests-crud.

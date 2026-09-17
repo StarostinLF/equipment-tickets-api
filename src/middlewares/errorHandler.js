@@ -1,13 +1,9 @@
 import { AppError } from '../errors/index.js';
 import { isProduction } from '../config/env.js';
 
-// Сигнатура из 4 аргументов обязательна для Express — так он отличает
-// error-handling middleware от обычного, даже если next() здесь не вызывается.
 export function errorHandler(err, req, res, next) {
   const isAppError = err instanceof AppError;
 
-  // express.json() при битом теле бросает SyntaxError с err.status = 400 —
-  // это не AppError, но статус у него уже корректный, доверяем ему.
   const parserStatus = !isAppError && typeof err.status === 'number' && err.status >= 400 && err.status < 500
     ? err.status
     : undefined;

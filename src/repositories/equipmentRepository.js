@@ -4,9 +4,6 @@ import { readJsonFile, writeJsonFile } from './jsonFileStore.js';
 
 const DATA_FILE = path.join(process.cwd(), 'data', 'equipment.json');
 
-// In-memory справочник оборудования, лениво загружается из JSON-файла
-// и синхронизируется с ним после каждой мутации. Наружу отдаётся только
-// через методы репозитория — сервис и контроллер о файле ничего не знают.
 let store = null;
 
 async function loadStore() {

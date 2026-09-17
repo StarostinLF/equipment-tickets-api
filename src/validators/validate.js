@@ -7,12 +7,6 @@ function formatIssues(zodError) {
   }));
 }
 
-/**
- * Универсальный middleware валидации.
- * req.query — геттер в Express 5 и не может быть переприсвоен,
- * поэтому провалидированные query-параметры кладутся в req.validatedQuery,
- * а не заменяют req.query.
- */
 export function validate({ body, params, query } = {}) {
   return (req, res, next) => {
     const details = [];
