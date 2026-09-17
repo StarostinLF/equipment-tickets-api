@@ -8,12 +8,6 @@ export class AppError extends Error {
   }
 }
 
-export class BadRequestError extends AppError {
-  constructor(message = 'Некорректный запрос', details) {
-    super(message, { statusCode: 400, code: 'BAD_REQUEST', details });
-  }
-}
-
 export class ValidationError extends AppError {
   constructor(message = 'Некорректные данные запроса', details) {
     super(message, { statusCode: 422, code: 'VALIDATION_ERROR', details });
