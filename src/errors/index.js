@@ -31,3 +31,9 @@ export class ConflictError extends AppError {
     super(message, { statusCode: 409, code: 'CONFLICT', details });
   }
 }
+
+export class ExternalServiceError extends AppError {
+  constructor(message = 'Внешний сервис недоступен', details) {
+    super(message, { statusCode: 502, code: 'EXTERNAL_SERVICE_ERROR', details });
+  }
+}
