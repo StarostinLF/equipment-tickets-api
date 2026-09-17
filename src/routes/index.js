@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { healthRouter } from './healthRoutes.js';
+import { equipmentRouter } from './equipmentRoutes.js';
 
 export const apiRouter = Router();
 
 apiRouter.use(healthRouter);
-
-// Роуты equipment и requests подключаются здесь по мере реализации CRUD.
+apiRouter.use(equipmentRouter);
