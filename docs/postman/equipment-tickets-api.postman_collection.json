@@ -133,6 +133,31 @@
           ]
         },
         {
+          "name": "Обновление пустым телом (422)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/equipment/{{equipmentId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 422', () => pm.response.to.have.status(422));",
+                  "pm.test('code = VALIDATION_ERROR', () => {",
+                  "  pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Прогноз погоды",
           "request": {
             "method": "GET",
