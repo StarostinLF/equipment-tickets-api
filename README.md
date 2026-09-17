@@ -81,8 +81,31 @@ data/                  runtime-снэпшоты JSON (не в git, создаё�
 | `status` | `operational` \| `maintenance` \| `fault` \| `decommissioned` | |
 | `installedAt` | ISO-дата | не в будущем |
 
-Заявки на обслуживание (maintenance request) появятся вместе с CRUD-эндпоинтами
-в следующем PR — модель и схема переходов статуса будут описаны здесь же.
+### Заявка на обслуживание (maintenance request)
+
+| Поле | Тип | Комментарий |
+|---|---|---|
+| `id` | string (uuid) | генерируется сервером |
+| `equipmentId` | string (uuid) | ссылка на существующее оборудование |
+| `title` | string, 5–120 символов | обязательное |
+| `description` | string, до 2000 символов | необязательное |
+| `priority` | `low` \| `medium` \| `high` \| `critical` | |
+| `status` | `new` \| `in_progress` \| `done` \| `rejected` | по умолчанию `new`, проставляется сервером |
+| `plannedAt` | ISO-дата-время | необязательное |
+| `createdAt` / `updatedAt` | ISO-дата-время | проставляются сервером |
+
+### Переходы статуса заявки
+
+```
+new → in_progress → done
+new → rejected
+in_progress → rejected
+```
+
+Из `done` и `rejected` переходы запрещены. Попытка недопустимого перехода —
+`409 CONFLICT`. Смена статуса выполняется только через
+`PATCH /api/requests/:id/status`; в общем `PATCH /api/requests/:id` поле
+`status` игнорируется, как и `id`/`createdAt`/`updatedAt`.
 
 ## Эндпоинты
 
@@ -95,8 +118,16 @@ data/                  runtime-снэпшоты JSON (не в git, создаё�
 | PATCH | `/api/equipment/:id` | частичное обновление |
 | DELETE | `/api/equipment/:id` | удаление |
 | GET | `/api/equipment/:id/weather` | прогноз погоды по координатам и пригодность окна для наружных работ |
+| GET | `/api/equipment/:id/requests` | заявки по конкретной единице оборудования |
+| GET | `/api/requests` | список заявок: фильтры, сортировка, пагинация |
+| POST | `/api/requests` | создание заявки |
+| GET | `/api/requests/:id` | карточка заявки |
+| PATCH | `/api/requests/:id` | редактирование полей заявки (кроме статуса) |
+| PATCH | `/api/requests/:id/status` | смена статуса с проверкой допустимости перехода |
+| DELETE | `/api/requests/:id` | удаление заявки |
 
-Эндпоинты заявок на обслуживание добавятся следующим Pull Request'ом.
+Удаление оборудования запрещено (`409`), пока по нему остаются заявки в
+статусе `new` или `in_progress`.
 
 ### Список: фильтры, сортировка, пагинация
 
@@ -109,6 +140,13 @@ data/                  runtime-снэпшоты JSON (не в git, создаё�
 
 Некорректные значения (например, `page=0` или неизвестный `type`) отклоняются
 с кодом `422`.
+
+`GET /api/requests` принимает `status`, `priority`, `equipmentId`,
+`createdFrom`/`createdTo` (диапазон по `createdAt`), `sort`
+(`createdAt` \| `updatedAt` \| `priority` \| `plannedAt` \| `status`, по
+умолчанию `createdAt`), `order` (по умолчанию `desc`), `page`, `limit`.
+`GET /api/equipment/:id/requests` — те же фильтры/сортировка/пагинация,
+кроме `equipmentId` (он уже задан путём).
 
 ## Формат ответа
 
@@ -217,7 +255,6 @@ enum, диапазон). Это разделение соответствует 
 ## Тестирование в Postman
 
 Коллекция лежит в [docs/postman/equipment-tickets-api.postman_collection.json](docs/postman/equipment-tickets-api.postman_collection.json)
-и использует переменные `{{baseUrl}}` и `{{equipmentId}}` (сохраняется
-автоматически из ответа на создание оборудования и переиспользуется в
-последующих запросах папки Equipment). Будет дополняться вместе с
-эндпоинтами заявок.
+и использует переменные `{{baseUrl}}`, `{{equipmentId}}` и `{{requestId}}` —
+они сохраняются автоматически из ответов на создание ресурсов и
+переиспользуются в последующих запросах папок Equipment и Requests.

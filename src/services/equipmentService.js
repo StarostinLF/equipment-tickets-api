@@ -1,4 +1,5 @@
 import { equipmentRepository } from '../repositories/equipmentRepository.js';
+import { requestRepository } from '../repositories/requestRepository.js';
 import { ConflictError, NotFoundError } from '../errors/index.js';
 
 async function assertSerialNumberIsFree(serialNumber, excludeId) {
@@ -41,6 +42,12 @@ export const equipmentService = {
 
   async remove(id) {
     await this.getById(id);
+
+    const hasOpenRequests = await requestRepository.hasOpenByEquipmentId(id);
+    if (hasOpenRequests) {
+      throw new ConflictError('Нельзя удалить оборудование с незакрытыми заявками');
+    }
+
     await equipmentRepository.remove(id);
   },
 };
