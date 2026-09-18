@@ -31,3 +31,15 @@ export class ExternalServiceError extends AppError {
     super(message, { statusCode: 502, code: 'EXTERNAL_SERVICE_ERROR', details });
   }
 }
+
+export class ForbiddenError extends AppError {
+  constructor(message = 'Доступ запрещён', details) {
+    super(message, { statusCode: 403, code: 'FORBIDDEN', details });
+  }
+}
+
+export class TooManyRequestsError extends AppError {
+  constructor(message = 'Превышен лимит частоты запросов', details) {
+    super(message, { statusCode: 429, code: 'RATE_LIMITED', details });
+  }
+}
