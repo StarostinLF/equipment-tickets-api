@@ -160,6 +160,36 @@ REST API для учёта оборудования производственн
 
 `PATCH /api/equipment/:id` и `PATCH /api/requests/:id` отклоняют пустое тело (`{}`) с кодом `422` — нужно передать хотя бы одно поле для обновления; если ни одно поле не изменилось, отправлять запрос незачем.
 
+### Примеры запросов
+
+Создание оборудования:
+
+```bash
+  curl -X POST localhost:3000/api/equipment \
+    -H "Content-Type: application/json" \
+    -d '{"name":"Турбина №1","type":"turbine","serialNumber":"SN-001","location":{"lat":55.75,"lon":37.62},"status":"operational","installedAt":"2023-05-01"}'
+```
+
+```json
+  HTTP/1.1 201 Created
+  Location: /api/equipment/6b0df916-a189-422d-9353-9e9c38374491
+
+  { "data": { "id": "6b0df916-a189-422d-9353-9e9c38374491", "name": "Турбина №1", "type": "turbine", "serialNumber": "SN-001", "location": { "lat": 55.75, "lon": 37.62 }, "status": "operational", "installedAt": "2023-05-01" } }
+```
+
+Попытка недопустимого перехода статуса заявки (`new → done`, минуя `in_progress`):
+
+```bash
+  curl -X PATCH localhost:3000/api/requests/{id}/status \
+    -H "Content-Type: application/json" -d '{"status":"done"}'
+```
+
+```json
+  HTTP/1.1 409 Conflict
+
+  { "error": { "code": "CONFLICT", "message": "Недопустимый переход статуса: new -> done", "requestId": "..." } }
+```
+
 ### Коды ошибок
 
 | HTTP | `code`                   | Когда возвращается                                      |
@@ -230,3 +260,7 @@ REST API для учёта оборудования производственн
 ## Тестирование в Postman
 
 Коллекция лежит в [docs/postman/equipment-tickets-api.postman_collection.json](docs/postman/equipment-tickets-api.postman_collection.json) и использует переменные `{{baseUrl}}`, `{{equipmentId}}` и `{{requestId}}` — они сохраняются автоматически из ответов на создание ресурсов и переиспользуются в последующих запросах папок Equipment и Requests.
+
+## Инструменты разработки
+
+Часть рутинных задач — черновик структуры проекта и конфигов, оформление README и Postman-коллекции, перевод сообщений валидации на русский, мелкие правки вроде удаления неиспользуемого класса ошибки — делал с помощью ИИ-агента, чтобы не тратить на них время вручную. Архитектурные решения, бизнес-логику и итоговую проверку оставлял за собой.
