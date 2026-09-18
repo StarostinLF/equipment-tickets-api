@@ -1,26 +1,12 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readJsonFile, writeJsonFile } from './jsonFileStore.js';
+import { createCollectionStore } from './jsonFileStore.js';
 
-const DATA_FILE = path.join(process.cwd(), 'data', 'equipment.json');
-
-let store = null;
-
-async function loadStore() {
-  if (!store) {
-    const items = await readJsonFile(DATA_FILE);
-    store = new Map(items.map((item) => [item.id, item]));
-  }
-  return store;
-}
-
-async function persist() {
-  await writeJsonFile(DATA_FILE, [...store.values()]);
-}
+const store = createCollectionStore(path.join(process.cwd(), 'data', 'equipment.json'));
 
 export const equipmentRepository = {
   async findAll({ type, status, sort, order, page, limit }) {
-    const all = await loadStore();
+    const all = await store.load();
     let items = [...all.values()];
 
     if (type) items = items.filter((item) => item.type === type);
@@ -41,37 +27,37 @@ export const equipmentRepository = {
   },
 
   async findById(id) {
-    const all = await loadStore();
+    const all = await store.load();
     return all.get(id) ?? null;
   },
 
   async findBySerialNumber(serialNumber) {
-    const all = await loadStore();
+    const all = await store.load();
     return [...all.values()].find((item) => item.serialNumber === serialNumber) ?? null;
   },
 
   async create(data) {
-    const all = await loadStore();
+    const all = await store.load();
     const equipment = { id: randomUUID(), ...data };
     all.set(equipment.id, equipment);
-    await persist();
+    await store.persist();
     return equipment;
   },
 
   async update(id, patch) {
-    const all = await loadStore();
+    const all = await store.load();
     const existing = all.get(id);
     if (!existing) return null;
     const updated = { ...existing, ...patch, id: existing.id };
     all.set(id, updated);
-    await persist();
+    await store.persist();
     return updated;
   },
 
   async remove(id) {
-    const all = await loadStore();
+    const all = await store.load();
     const existed = all.delete(id);
-    if (existed) await persist();
+    if (existed) await store.persist();
     return existed;
   },
 };
