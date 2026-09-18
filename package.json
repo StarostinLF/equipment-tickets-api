@@ -12,7 +12,10 @@
     "dev": "node --env-file-if-exists=.env --watch src/server.js"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
     "pino": "^9.5.0",
     "pino-http": "^10.3.0",
     "zod": "^4.6.5"
