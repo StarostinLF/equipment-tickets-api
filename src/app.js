@@ -6,6 +6,7 @@ import { requestLogger } from './middlewares/requestLogger.js';
 import { rateLimiter } from './middlewares/rateLimiter.js';
 import { apiRouter } from './routes/index.js';
 import { notFoundHandler } from './middlewares/notFoundHandler.js';
+import { dbErrorMapper } from './middlewares/dbErrorMapper.js';
 import { errorHandler } from './middlewares/errorHandler.js';
 
 const JSON_BODY_LIMIT = '100kb';
@@ -25,6 +26,7 @@ export function createApp() {
   app.use('/api', apiRouter);
 
   app.use(notFoundHandler);
+  app.use(dbErrorMapper);
   app.use(errorHandler);
 
   return app;
