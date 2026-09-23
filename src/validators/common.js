@@ -16,7 +16,12 @@ export function isoDate({ allowFuture = true } = {}) {
 }
 
 export const paginationQuery = {
-  page: z.coerce.number('Ожидается число').int('Ожидается целое число').min(1, 'Минимум 1').default(1),
+  page: z.coerce
+    .number('Ожидается число')
+    .int('Ожидается целое число')
+    .min(1, 'Минимум 1')
+    .max(10000, 'Максимум 10000')
+    .default(1),
   limit: z.coerce
     .number('Ожидается число')
     .int('Ожидается целое число')
