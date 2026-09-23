@@ -6,7 +6,7 @@ export function defineRequestAssignee(sequelize) {
   return sequelize.define(
     'RequestAssignee',
     {
-      id: { type: DataTypes.UUID, primaryKey: true },
+      id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
       requestId: { type: DataTypes.UUID, allowNull: false },
       technicianId: { type: DataTypes.UUID, allowNull: false },
       role: { type: DataTypes.ENUM(...ASSIGNEE_ROLES), allowNull: false },

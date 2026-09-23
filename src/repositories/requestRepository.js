@@ -1,92 +1,78 @@
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { createCollectionStore } from './jsonFileStore.js';
+import { Op } from 'sequelize';
+import { MaintenanceRequest } from '../db/models/index.js';
 
-const store = createCollectionStore(path.join(process.cwd(), 'data', 'requests.json'));
+const ATTRIBUTES = [
+  'id', 'equipmentId', 'title', 'description', 'priority', 'status', 'plannedAt', 'author', 'createdAt', 'updatedAt',
+];
 const OPEN_STATUSES = ['new', 'in_progress'];
 
-function matchesDateRange(value, from, to) {
-  if (!from && !to) return true;
-  if (!value) return false;
-  const time = new Date(value).getTime();
-  if (from && time < new Date(from).getTime()) return false;
-  if (to && time > new Date(to).getTime()) return false;
-  return true;
+function toDto(request) {
+  if (!request) return null;
+  const plain = request.get({ plain: true });
+  return {
+    id: plain.id,
+    equipmentId: plain.equipmentId,
+    title: plain.title,
+    description: plain.description,
+    priority: plain.priority,
+    status: plain.status,
+    plannedAt: plain.plannedAt,
+    author: plain.author,
+    createdAt: plain.createdAt,
+    updatedAt: plain.updatedAt,
+  };
 }
 
 export const requestRepository = {
   async findAll({ equipmentId, status, priority, createdFrom, createdTo, sort, order, page, limit }) {
-    const all = await store.load();
-    let items = [...all.values()];
-
-    if (equipmentId) items = items.filter((item) => item.equipmentId === equipmentId);
-    if (status) items = items.filter((item) => item.status === status);
-    if (priority) items = items.filter((item) => item.priority === priority);
+    const where = {};
+    if (equipmentId) where.equipmentId = equipmentId;
+    if (status) where.status = status;
+    if (priority) where.priority = priority;
     if (createdFrom || createdTo) {
-      items = items.filter((item) => matchesDateRange(item.createdAt, createdFrom, createdTo));
+      where.createdAt = {};
+      if (createdFrom) where.createdAt[Op.gte] = new Date(createdFrom);
+      if (createdTo) where.createdAt[Op.lte] = new Date(createdTo);
     }
 
-    const direction = order === 'desc' ? -1 : 1;
-    items.sort((a, b) => {
-      if (a[sort] < b[sort]) return -1 * direction;
-      if (a[sort] > b[sort]) return 1 * direction;
-      return 0;
+    const { rows, count } = await MaintenanceRequest.findAndCountAll({
+      where,
+      attributes: ATTRIBUTES,
+      order: [[sort, order.toUpperCase()]],
+      limit,
+      offset: (page - 1) * limit,
     });
 
-    const total = items.length;
-    const start = (page - 1) * limit;
-    const pageItems = items.slice(start, start + limit);
-
-    return { items: pageItems, total };
+    return { items: rows.map(toDto), total: count };
   },
 
   async findById(id) {
-    const all = await store.load();
-    return all.get(id) ?? null;
+    const request = await MaintenanceRequest.findByPk(id, { attributes: ATTRIBUTES });
+    return toDto(request);
   },
 
   async hasOpenByEquipmentId(equipmentId) {
-    const all = await store.load();
-    return [...all.values()].some(
-      (item) => item.equipmentId === equipmentId && OPEN_STATUSES.includes(item.status),
-    );
+    const count = await MaintenanceRequest.count({
+      where: { equipmentId, status: { [Op.in]: OPEN_STATUSES } },
+    });
+    return count > 0;
   },
 
   async create(data) {
-    const all = await store.load();
-    const now = new Date().toISOString();
-    const request = {
-      id: randomUUID(),
-      ...data,
-      status: 'new',
-      createdAt: now,
-      updatedAt: now,
-    };
-    all.set(request.id, request);
-    await store.persist();
-    return request;
+    const request = await MaintenanceRequest.create({ ...data, status: 'new' });
+    return toDto(request);
   },
 
   async update(id, patch) {
-    const all = await store.load();
-    const existing = all.get(id);
-    if (!existing) return null;
-    const updated = {
-      ...existing,
-      ...patch,
-      id: existing.id,
-      createdAt: existing.createdAt,
-      updatedAt: new Date().toISOString(),
-    };
-    all.set(id, updated);
-    await store.persist();
-    return updated;
+    const [count, [request]] = await MaintenanceRequest.update(patch, {
+      where: { id },
+      returning: true,
+    });
+    return count > 0 ? toDto(request) : null;
   },
 
   async remove(id) {
-    const all = await store.load();
-    const existed = all.delete(id);
-    if (existed) await store.persist();
-    return existed;
+    const count = await MaintenanceRequest.destroy({ where: { id } });
+    return count > 0;
   },
 };
