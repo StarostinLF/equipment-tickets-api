@@ -14,7 +14,8 @@
     "db:migrate:undo": "node --env-file-if-exists=.env node_modules/sequelize-cli/lib/sequelize db:migrate:undo",
     "db:migrate:undo:all": "node --env-file-if-exists=.env node_modules/sequelize-cli/lib/sequelize db:migrate:undo:all",
     "db:seed:all": "node --env-file-if-exists=.env node_modules/sequelize-cli/lib/sequelize db:seed:all",
-    "db:seed:undo:all": "node --env-file-if-exists=.env node_modules/sequelize-cli/lib/sequelize db:seed:undo:all"
+    "db:seed:undo:all": "node --env-file-if-exists=.env node_modules/sequelize-cli/lib/sequelize db:seed:undo:all",
+    "db:import-legacy": "node --env-file-if-exists=.env src/db/import-legacy-data.js"
   },
   "dependencies": {
     "cors": "^2.8.6",
