@@ -1,4 +1,7 @@
+import { sequelize } from '../config/database.js';
 import { requestRepository } from '../repositories/requestRepository.js';
+import { requestStatusHistoryRepository } from '../repositories/requestStatusHistoryRepository.js';
+import { requestAssigneeRepository } from '../repositories/requestAssigneeRepository.js';
 import { equipmentService } from './equipmentService.js';
 import { NotFoundError, ConflictError } from '../errors/index.js';
 
@@ -29,6 +32,11 @@ export const requestService = {
     return request;
   },
 
+  async getHistory(id) {
+    await this.getById(id);
+    return requestStatusHistoryRepository.findByRequestId(id);
+  },
+
   async create(data) {
     await equipmentService.getById(data.equipmentId);
     return requestRepository.create(data);
@@ -44,15 +52,41 @@ export const requestService = {
     return requestRepository.update(id, patch);
   },
 
-  async updateStatus(id, nextStatus) {
-    const request = await this.getById(id);
-    const allowed = ALLOWED_TRANSITIONS[request.status] ?? [];
+  async updateStatus(id, nextStatus, { changedBy, comment } = {}) {
+    return sequelize.transaction(async (transaction) => {
+      const request = await requestRepository.lockById(id, transaction);
+      if (!request) {
+        throw new NotFoundError('Заявка не найдена');
+      }
 
-    if (!allowed.includes(nextStatus)) {
-      throw new ConflictError(`Недопустимый переход статуса: ${request.status} -> ${nextStatus}`);
-    }
+      const currentStatus = request.status;
+      const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? [];
+      if (!allowed.includes(nextStatus)) {
+        throw new ConflictError(`Недопустимый переход статуса: ${currentStatus} -> ${nextStatus}`);
+      }
 
-    return requestRepository.update(id, { status: nextStatus });
+      if (nextStatus === 'in_progress') {
+        const assigneeCount = await requestAssigneeRepository.countByRequestId(id, transaction);
+        if (assigneeCount === 0) {
+          throw new ConflictError('Нельзя перевести заявку в работу без назначенных исполнителей');
+        }
+      }
+
+      const updated = await requestRepository.update(id, { status: nextStatus }, { transaction });
+
+      await requestStatusHistoryRepository.create(
+        {
+          requestId: id,
+          previousStatus: currentStatus,
+          newStatus: nextStatus,
+          changedBy: changedBy ?? null,
+          comment: comment ?? null,
+        },
+        transaction,
+      );
+
+      return updated;
+    });
   },
 
   async remove(id) {

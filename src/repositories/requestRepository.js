@@ -51,6 +51,10 @@ export const requestRepository = {
     return toDto(request);
   },
 
+  async lockById(id, transaction) {
+    return MaintenanceRequest.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+  },
+
   async hasOpenByEquipmentId(equipmentId) {
     const count = await MaintenanceRequest.count({
       where: { equipmentId, status: { [Op.in]: OPEN_STATUSES } },
@@ -63,10 +67,11 @@ export const requestRepository = {
     return toDto(request);
   },
 
-  async update(id, patch) {
+  async update(id, patch, options = {}) {
     const [count, [request]] = await MaintenanceRequest.update(patch, {
       where: { id },
       returning: true,
+      ...options,
     });
     return count > 0 ? toDto(request) : null;
   },

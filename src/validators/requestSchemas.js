@@ -19,6 +19,8 @@ export const updateRequestSchema = nonEmpty(createRequestSchema.partial());
 
 export const updateRequestStatusSchema = z.object({
   status: z.enum(REQUEST_STATUSES, 'Недопустимый статус заявки'),
+  changedBy: z.string('Ожидается строка').trim().min(1).max(150).optional(),
+  comment: z.string('Ожидается строка').max(2000, 'Максимум 2000 символов').optional(),
 });
 
 export const requestIdParamsSchema = z.object({
