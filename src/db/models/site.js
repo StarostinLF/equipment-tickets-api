@@ -4,7 +4,7 @@ export function defineSite(sequelize) {
   return sequelize.define(
     'Site',
     {
-      id: { type: DataTypes.UUID, primaryKey: true },
+      id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
       name: { type: DataTypes.STRING(150), allowNull: false },
       code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
       region: { type: DataTypes.STRING(150), allowNull: false },

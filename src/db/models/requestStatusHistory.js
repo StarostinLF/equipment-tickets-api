@@ -5,7 +5,7 @@ export function defineRequestStatusHistory(sequelize) {
   return sequelize.define(
     'RequestStatusHistory',
     {
-      id: { type: DataTypes.UUID, primaryKey: true },
+      id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
       requestId: { type: DataTypes.UUID, allowNull: false },
       previousStatus: { type: DataTypes.ENUM(...REQUEST_STATUSES), allowNull: false },
       newStatus: { type: DataTypes.ENUM(...REQUEST_STATUSES), allowNull: false },

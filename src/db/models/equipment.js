@@ -5,7 +5,7 @@ export function defineEquipment(sequelize) {
   return sequelize.define(
     'Equipment',
     {
-      id: { type: DataTypes.UUID, primaryKey: true },
+      id: { type: DataTypes.UUID, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
       siteId: { type: DataTypes.UUID, allowNull: false },
       name: { type: DataTypes.STRING(100), allowNull: false },
       type: { type: DataTypes.ENUM(...EQUIPMENT_TYPES), allowNull: false },
