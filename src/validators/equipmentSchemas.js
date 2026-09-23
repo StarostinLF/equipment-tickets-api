@@ -14,6 +14,7 @@ const locationSchema = z.object(
 
 export const createEquipmentSchema = z.object(
   {
+    siteId: z.uuid('Некорректный идентификатор площадки'),
     name: z.string('Ожидается строка').trim().min(3, 'Минимум 3 символа').max(100, 'Максимум 100 символов'),
     type: z.enum(EQUIPMENT_TYPES, 'Недопустимый тип оборудования'),
     serialNumber: z.string('Ожидается строка').trim().min(1, 'Серийный номер обязателен'),

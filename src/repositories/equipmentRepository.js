@@ -1,63 +1,73 @@
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { createCollectionStore } from './jsonFileStore.js';
+import { Equipment } from '../db/models/index.js';
 
-const store = createCollectionStore(path.join(process.cwd(), 'data', 'equipment.json'));
+const ATTRIBUTES = ['id', 'siteId', 'name', 'type', 'serialNumber', 'status', 'lat', 'lon', 'installedAt'];
+
+function toDto(equipment) {
+  if (!equipment) return null;
+  const plain = equipment.get({ plain: true });
+  return {
+    id: plain.id,
+    siteId: plain.siteId,
+    name: plain.name,
+    type: plain.type,
+    serialNumber: plain.serialNumber,
+    status: plain.status,
+    location: { lat: Number(plain.lat), lon: Number(plain.lon) },
+    installedAt: plain.installedAt,
+  };
+}
+
+function toModelValues({ location, ...rest }) {
+  const values = { ...rest };
+  if (location) {
+    values.lat = location.lat;
+    values.lon = location.lon;
+  }
+  return values;
+}
 
 export const equipmentRepository = {
   async findAll({ type, status, sort, order, page, limit }) {
-    const all = await store.load();
-    let items = [...all.values()];
+    const where = {};
+    if (type) where.type = type;
+    if (status) where.status = status;
 
-    if (type) items = items.filter((item) => item.type === type);
-    if (status) items = items.filter((item) => item.status === status);
-
-    const direction = order === 'desc' ? -1 : 1;
-    items.sort((a, b) => {
-      if (a[sort] < b[sort]) return -1 * direction;
-      if (a[sort] > b[sort]) return 1 * direction;
-      return 0;
+    const { rows, count } = await Equipment.findAndCountAll({
+      where,
+      attributes: ATTRIBUTES,
+      order: [[sort, order.toUpperCase()]],
+      limit,
+      offset: (page - 1) * limit,
     });
 
-    const total = items.length;
-    const start = (page - 1) * limit;
-    const pageItems = items.slice(start, start + limit);
-
-    return { items: pageItems, total };
+    return { items: rows.map(toDto), total: count };
   },
 
   async findById(id) {
-    const all = await store.load();
-    return all.get(id) ?? null;
+    const equipment = await Equipment.findByPk(id, { attributes: ATTRIBUTES });
+    return toDto(equipment);
   },
 
   async findBySerialNumber(serialNumber) {
-    const all = await store.load();
-    return [...all.values()].find((item) => item.serialNumber === serialNumber) ?? null;
+    const equipment = await Equipment.findOne({ where: { serialNumber }, attributes: ATTRIBUTES });
+    return toDto(equipment);
   },
 
   async create(data) {
-    const all = await store.load();
-    const equipment = { id: randomUUID(), ...data };
-    all.set(equipment.id, equipment);
-    await store.persist();
-    return equipment;
+    const equipment = await Equipment.create(toModelValues(data));
+    return toDto(equipment);
   },
 
   async update(id, patch) {
-    const all = await store.load();
-    const existing = all.get(id);
-    if (!existing) return null;
-    const updated = { ...existing, ...patch, id: existing.id };
-    all.set(id, updated);
-    await store.persist();
-    return updated;
+    const [count, [equipment]] = await Equipment.update(toModelValues(patch), {
+      where: { id },
+      returning: true,
+    });
+    return count > 0 ? toDto(equipment) : null;
   },
 
   async remove(id) {
-    const all = await store.load();
-    const existed = all.delete(id);
-    if (existed) await store.persist();
-    return existed;
+    const count = await Equipment.destroy({ where: { id } });
+    return count > 0;
   },
 };
