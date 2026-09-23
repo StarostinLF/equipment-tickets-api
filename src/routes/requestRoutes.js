@@ -43,6 +43,12 @@ requestRouter.patch(
   requestController.updateStatus,
 );
 
+requestRouter.get(
+  '/requests/:id/history',
+  validate({ params: requestIdParamsSchema }),
+  requestController.getHistory,
+);
+
 requestRouter.delete(
   '/requests/:id',
   validate({ params: requestIdParamsSchema }),

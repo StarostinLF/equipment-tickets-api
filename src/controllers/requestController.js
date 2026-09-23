@@ -30,8 +30,14 @@ export const requestController = {
   },
 
   async updateStatus(req, res) {
-    const request = await requestService.updateStatus(req.params.id, req.body.status);
+    const { status, changedBy, comment } = req.body;
+    const request = await requestService.updateStatus(req.params.id, status, { changedBy, comment });
     res.json({ data: request });
+  },
+
+  async getHistory(req, res) {
+    const history = await requestService.getHistory(req.params.id);
+    res.json({ data: history });
   },
 
   async remove(req, res) {
