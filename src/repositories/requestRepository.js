@@ -1,14 +1,31 @@
 import { Op } from 'sequelize';
-import { MaintenanceRequest } from '../db/models/index.js';
+import { MaintenanceRequest, RequestAssignee, Technician } from '../db/models/index.js';
 
 const ATTRIBUTES = [
   'id', 'equipmentId', 'title', 'description', 'priority', 'status', 'plannedAt', 'author', 'createdAt', 'updatedAt',
 ];
 const OPEN_STATUSES = ['new', 'in_progress'];
 
-function toDto(request) {
+const ASSIGNEE_INCLUDE = {
+  model: RequestAssignee,
+  as: 'assignees',
+  attributes: ['technicianId', 'role', 'plannedHours'],
+  include: [{ model: Technician, as: 'technician', attributes: ['fullName'] }],
+};
+
+function toAssigneeDto(row) {
+  return {
+    technicianId: row.technicianId,
+    fullName: row.technician?.fullName ?? null,
+    role: row.role,
+    plannedHours: Number(row.plannedHours),
+  };
+}
+
+function toDto(request, assigneesOverride) {
   if (!request) return null;
   const plain = request.get({ plain: true });
+  const assignees = assigneesOverride ?? plain.assignees ?? [];
   return {
     id: plain.id,
     equipmentId: plain.equipmentId,
@@ -20,6 +37,7 @@ function toDto(request) {
     author: plain.author,
     createdAt: plain.createdAt,
     updatedAt: plain.updatedAt,
+    assignees: assignees.map(toAssigneeDto),
   };
 }
 
@@ -38,16 +56,18 @@ export const requestRepository = {
     const { rows, count } = await MaintenanceRequest.findAndCountAll({
       where,
       attributes: ATTRIBUTES,
+      include: [ASSIGNEE_INCLUDE],
       order: [[sort, order.toUpperCase()]],
       limit,
       offset: (page - 1) * limit,
+      distinct: true,
     });
 
-    return { items: rows.map(toDto), total: count };
+    return { items: rows.map((row) => toDto(row)), total: count };
   },
 
   async findById(id) {
-    const request = await MaintenanceRequest.findByPk(id, { attributes: ATTRIBUTES });
+    const request = await MaintenanceRequest.findByPk(id, { attributes: ATTRIBUTES, include: [ASSIGNEE_INCLUDE] });
     return toDto(request);
   },
 
@@ -64,7 +84,7 @@ export const requestRepository = {
 
   async create(data) {
     const request = await MaintenanceRequest.create({ ...data, status: 'new' });
-    return toDto(request);
+    return toDto(request, []);
   },
 
   async update(id, patch, options = {}) {
@@ -73,7 +93,15 @@ export const requestRepository = {
       returning: true,
       ...options,
     });
-    return count > 0 ? toDto(request) : null;
+    if (count === 0) return null;
+
+    const assignees = await RequestAssignee.findAll({
+      where: { requestId: id },
+      attributes: ['technicianId', 'role', 'plannedHours'],
+      include: [{ model: Technician, as: 'technician', attributes: ['fullName'] }],
+      transaction: options.transaction,
+    });
+    return toDto(request, assignees);
   },
 
   async remove(id) {
