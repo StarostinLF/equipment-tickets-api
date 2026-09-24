@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requestController } from '../controllers/requestController.js';
+import { assigneeController } from '../controllers/assigneeController.js';
 import { validate } from '../validators/validate.js';
 import {
   createRequestSchema,
@@ -9,6 +10,7 @@ import {
   listRequestsQuerySchema,
   listRequestsByEquipmentQuerySchema,
 } from '../validators/requestSchemas.js';
+import { assignTeamSchema, removeAssigneeParamsSchema } from '../validators/assigneeSchemas.js';
 import { equipmentIdParamsSchema } from '../validators/equipmentSchemas.js';
 
 export const requestRouter = Router();
@@ -47,6 +49,18 @@ requestRouter.get(
   '/requests/:id/history',
   validate({ params: requestIdParamsSchema }),
   requestController.getHistory,
+);
+
+requestRouter.post(
+  '/requests/:id/assignees',
+  validate({ params: requestIdParamsSchema, body: assignTeamSchema }),
+  assigneeController.assignTeam,
+);
+
+requestRouter.delete(
+  '/requests/:id/assignees/:userId',
+  validate({ params: removeAssigneeParamsSchema }),
+  assigneeController.remove,
 );
 
 requestRouter.delete(
