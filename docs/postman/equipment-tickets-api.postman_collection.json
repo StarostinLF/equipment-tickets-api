@@ -7,7 +7,10 @@
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:3000/api" },
     { "key": "equipmentId", "value": "" },
-    { "key": "requestId", "value": "" }
+    { "key": "requestId", "value": "" },
+    { "key": "siteId", "value": "" },
+    { "key": "technicianId", "value": "" },
+    { "key": "secondTechnicianId", "value": "" }
   ],
   "item": [
     {
@@ -37,6 +40,104 @@
       ]
     },
     {
+      "name": "Sites",
+      "item": [
+        {
+          "name": "Список площадок",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sites"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('data — непустой массив', () => {",
+                  "  pm.expect(body.data).to.be.an('array');",
+                  "  pm.expect(body.data.length).to.be.above(0);",
+                  "});",
+                  "pm.collectionVariables.set('siteId', body.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Сводка по площадке",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sites/{{siteId}}/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('есть разбивка по статусам и приоритетам', () => {",
+                  "  pm.expect(body.data).to.have.property('requestsByStatus');",
+                  "  pm.expect(body.data).to.have.property('requestsByPriority');",
+                  "  pm.expect(body.data).to.have.property('averageClosingTimeHours');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Сводка — несуществующая площадка (404)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sites/00000000-0000-4000-8000-000000000000/summary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 404', () => pm.response.to.have.status(404));",
+                  "pm.test('code = NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Technicians",
+      "item": [
+        {
+          "name": "Список специалистов",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/technicians"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('data содержит минимум двух специалистов', () => {",
+                  "  pm.expect(body.data).to.be.an('array');",
+                  "  pm.expect(body.data.length).to.be.above(1);",
+                  "});",
+                  "pm.collectionVariables.set('technicianId', body.data[0].id);",
+                  "pm.collectionVariables.set('secondTechnicianId', body.data[1].id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Equipment",
       "item": [
         {
@@ -47,7 +148,7 @@
             "url": "{{baseUrl}}/equipment",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Турбина №1\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"SN-001\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.62 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2023-05-01\"\n}"
+              "raw": "{\n  \"siteId\": \"{{siteId}}\",\n  \"name\": \"Турбина №1\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"SN-POSTMAN-001\",\n  \"location\": { \"lat\": 55.75, \"lon\": 37.62 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2023-05-01\"\n}"
             }
           },
           "event": [
@@ -189,7 +290,7 @@
             "url": "{{baseUrl}}/equipment",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Турбина-дубль\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"SN-001\",\n  \"location\": { \"lat\": 1, \"lon\": 1 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2023-05-01\"\n}"
+              "raw": "{\n  \"siteId\": \"{{siteId}}\",\n  \"name\": \"Турбина-дубль\",\n  \"type\": \"turbine\",\n  \"serialNumber\": \"SN-POSTMAN-001\",\n  \"location\": { \"lat\": 1, \"lon\": 1 },\n  \"status\": \"operational\",\n  \"installedAt\": \"2023-05-01\"\n}"
             }
           },
           "event": [
@@ -398,6 +499,125 @@
           ]
         },
         {
+          "name": "Переход в in_progress без бригады (409)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/requests/{{requestId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"status\": \"in_progress\" }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 409', () => pm.response.to.have.status(409));",
+                  "pm.test('code = CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('CONFLICT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Назначение бригады без ведущего (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/requests/{{requestId}}/assignees",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"assignees\": [ { \"technicianId\": \"{{technicianId}}\", \"role\": \"member\", \"plannedHours\": 4 } ] }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 422', () => pm.response.to.have.status(422));",
+                  "pm.test('code = VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Назначение несуществующего специалиста (404)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/requests/{{requestId}}/assignees",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"assignees\": [ { \"technicianId\": \"00000000-0000-4000-8000-000000000000\", \"role\": \"lead\", \"plannedHours\": 4 } ] }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 404', () => pm.response.to.have.status(404));",
+                  "pm.test('code = NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Повторный специалист в одной бригаде (409)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/requests/{{requestId}}/assignees",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"assignees\": [ { \"technicianId\": \"{{technicianId}}\", \"role\": \"lead\", \"plannedHours\": 4 }, { \"technicianId\": \"{{technicianId}}\", \"role\": \"member\", \"plannedHours\": 2 } ] }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 409', () => pm.response.to.have.status(409));",
+                  "pm.test('code = CONFLICT', () => pm.expect(pm.response.json().error.code).to.eql('CONFLICT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Назначить бригаду",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/requests/{{requestId}}/assignees",
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"assignees\": [ { \"technicianId\": \"{{technicianId}}\", \"role\": \"lead\", \"plannedHours\": 8 }, { \"technicianId\": \"{{secondTechnicianId}}\", \"role\": \"member\", \"plannedHours\": 4 } ] }"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('в бригаде два специалиста', () => pm.expect(body.data.assignees.length).to.eql(2));",
+                  "pm.test('есть ровно один lead', () => {",
+                  "  pm.expect(body.data.assignees.filter((a) => a.role === 'lead').length).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Допустимый переход new -> in_progress",
           "request": {
             "method": "PATCH",
@@ -416,6 +636,27 @@
                   "pm.test('Статус 200', () => pm.response.to.have.status(200));",
                   "pm.test('Статус обновлён на in_progress', () => {",
                   "  pm.expect(pm.response.json().data.status).to.eql('in_progress');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "История статуса заявки",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/requests/{{requestId}}/history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('есть запись о переходе new -> in_progress', () => {",
+                  "  pm.expect(body.data.some((entry) => entry.previousStatus === 'new' && entry.newStatus === 'in_progress')).to.be.true;",
                   "});"
                 ]
               }
@@ -487,6 +728,41 @@
           ]
         },
         {
+          "name": "Снятие специалиста с заявки",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/requests/{{requestId}}/assignees/{{secondTechnicianId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Повторное снятие того же специалиста (404)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/requests/{{requestId}}/assignees/{{secondTechnicianId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 404', () => pm.response.to.have.status(404));",
+                  "pm.test('code = NOT_FOUND', () => pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Удаление заявки",
           "request": {
             "method": "DELETE",
@@ -515,6 +791,35 @@
               "script": {
                 "exec": [
                   "pm.test('Статус 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Нагрузка на оборудование",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/reports/equipment-load?minRequests=0"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Статус 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('data — массив с нужными полями', () => {",
+                  "  pm.expect(body.data).to.be.an('array');",
+                  "  if (body.data.length > 0) {",
+                  "    pm.expect(body.data[0]).to.have.all.keys('equipmentId', 'equipmentName', 'requestsCount', 'closedRequestsCount', 'totalPlannedHours', 'lastMaintenanceAt');",
+                  "  }",
+                  "});"
                 ]
               }
             }
