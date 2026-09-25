@@ -106,7 +106,7 @@ erDiagram
     }
     EQUIPMENT_PASSPORTS {
         uuid id PK
-        uuid equipment_id FK_UK
+        uuid equipment_id FK,UK
         string manufacturer
         string model
         decimal rated_power
