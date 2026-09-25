@@ -2,6 +2,10 @@ import { siteRepository } from '../repositories/siteRepository.js';
 import { NotFoundError } from '../errors/index.js';
 
 export const siteService = {
+  async list() {
+    return siteRepository.findAll();
+  },
+
   async getSummary(id) {
     const site = await siteRepository.findById(id);
     if (!site) {
