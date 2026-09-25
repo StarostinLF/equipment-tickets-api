@@ -14,12 +14,19 @@ REST API для учёта оборудования производственн
 ```bash
   npm install
   cp .env.example .env
+  docker compose up -d
+  npm run db:migrate
+  npm run db:seed:all
   npm run dev
 ```
 
 Сервис поднимется на `http://localhost:3000` (порт настраивается через `PORT`). Переменные окружения загружаются нативным флагом Node.js `--env-file-if-exists` (см. `package.json`) — отдельная зависимость вроде `dotenv` не нужна. Если файла `.env` нет, сервис возьмёт значения по умолчанию из [src/config/env.js](src/config/env.js) или переменные окружения, заданные снаружи (актуально для production).
 
 Команда `npm start` запускает сервис без автоперезапуска при изменении файлов — для этого используется `npm run dev`.
+
+`docker compose up -d` поднимает PostgreSQL с именованным томом и healthcheck (см. [docker-compose.yml](docker-compose.yml)). Если БД недоступна при старте сервиса, он не падает молча — печатает понятную ошибку и завершает процесс (код выхода 1), вместо того чтобы принимать запросы без рабочего хранилища.
+
+`npm run db:migrate` создаёт схему, `npm run db:seed:all` наполняет её демонстрационными данными: 2 площадки, 8 единиц оборудования (у части нет паспорта — специально, чтобы видеть оба варианта в ответе), 6 паспортов, 6 специалистов, 24 заявки во всех четырёх статусах с историей переходов и назначенными бригадами — этого достаточно, чтобы сразу проверить оба отчёта и все связи. Подробнее о миграциях — в разделе [Миграции и сиды](#миграции-и-сиды).
 
 ## Переменные окружения
 
@@ -32,8 +39,15 @@ REST API для учёта оборудования производственн
 | `RATE_LIMIT_MAX`       | максимум запросов на IP в окне                             | `100`                                    |
 | `WEATHER_API_URL`      | базовый URL внешнего погодного API (Open-Meteo, без ключа) | `https://api.open-meteo.com/v1/forecast` |
 | `REQUEST_TIMEOUT_MS`   | таймаут запросов к внешним сервисам, мс                    | `5000`                                   |
+| `DB_HOST`              | хост PostgreSQL                                            | `localhost`                              |
+| `DB_PORT`              | порт PostgreSQL                                            | `5432`                                   |
+| `DB_NAME`              | имя базы данных                                            | `equipment_tickets`                      |
+| `DB_USER`              | пользователь БД                                            | `postgres`                               |
+| `DB_PASSWORD`          | пароль БД                                                  | `postgres`                               |
+| `DB_POOL_MIN`          | минимальный размер пула соединений Sequelize               | `0`                                      |
+| `DB_POOL_MAX`          | максимальный размер пула соединений Sequelize              | `5`                                      |
 
-Полный список с комментариями — в [.env.example](.env.example).
+Полный список с комментариями — в [.env.example](.env.example). Значения по умолчанию для `DB_*` рассчитаны на локальный `docker-compose.yml` и не годятся для продакшена.
 
 ## Структура проекта
 
@@ -49,25 +63,147 @@ REST API для учёта оборудования производственн
     middlewares/       request-id, логирование, валидация, обработка ошибок
     validators/         схемы валидации запросов
     errors/             типы ошибок приложения
-    db/                 модели, миграции и сиды Sequelize
+    db/
+      models/           модели Sequelize и ассоциации (index.js)
+      migrations/        схема БД, по одной сущности на файл
+      seeders/            демонстрационные данные
+      config.cjs           конфигурация sequelize-cli
+      import-legacy-data.js  перенос data/*.json из Кейса 2 в БД
   docs/postman/         экспортированная коллекция Postman
 ```
 
 `app.js` не запускает сервер — модуль `createApp()` можно подключать в тестах (Jest + Supertest) без поднятия реального порта.
 
+## Схема базы данных
+
+```mermaid
+erDiagram
+    SITES ||--o{ EQUIPMENT : "площадка → оборудование"
+    EQUIPMENT ||--o| EQUIPMENT_PASSPORTS : "1:1"
+    EQUIPMENT ||--o{ MAINTENANCE_REQUESTS : "оборудование → заявки"
+    MAINTENANCE_REQUESTS ||--o{ REQUEST_STATUS_HISTORY : "история статусов"
+    MAINTENANCE_REQUESTS ||--o{ REQUEST_ASSIGNEES : "бригада"
+    TECHNICIANS ||--o{ REQUEST_ASSIGNEES : "назначения"
+
+    SITES {
+        uuid id PK
+        string name
+        string code UK
+        string region
+        decimal lat
+        decimal lon
+    }
+    EQUIPMENT {
+        uuid id PK
+        uuid site_id FK
+        string name
+        enum type
+        string serial_number UK
+        enum status
+        decimal lat
+        decimal lon
+        date installed_at
+    }
+    EQUIPMENT_PASSPORTS {
+        uuid id PK
+        uuid equipment_id FK_UK
+        string manufacturer
+        string model
+        decimal rated_power
+        date last_inspection_date
+    }
+    MAINTENANCE_REQUESTS {
+        uuid id PK
+        uuid equipment_id FK
+        string title
+        text description
+        enum priority
+        enum status
+        timestamptz planned_at
+        string author
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    REQUEST_STATUS_HISTORY {
+        uuid id PK
+        uuid request_id FK
+        enum previous_status
+        enum new_status
+        string changed_by
+        text comment
+        timestamptz changed_at
+    }
+    TECHNICIANS {
+        uuid id PK
+        string full_name
+        string specialization
+        string personnel_number UK
+    }
+    REQUEST_ASSIGNEES {
+        uuid id PK
+        uuid request_id FK
+        uuid technician_id FK
+        enum role
+        decimal planned_hours
+    }
+```
+
+Семь таблиц, приведены к третьей нормальной форме: справочные сущности (площадки, специалисты) вынесены отдельно от того, что на них ссылается, повторяющихся групп полей нет, каждый неключевой атрибут зависит только от первичного ключа своей таблицы.
+
+Правила удаления (`ON DELETE`) выбраны осознанно, не оставлены по умолчанию:
+
+| Связь                                          | Правило    | Почему                                                                                                                          |
+| ----------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `equipment.site_id → sites.id`                  | `RESTRICT` | площадку с оборудованием не удалить — сначала перенести или удалить оборудование                                                |
+| `equipment_passports.equipment_id → equipment.id` | `CASCADE`  | паспорт бессмысленен без оборудования, к которому относится                                                                     |
+| `maintenance_requests.equipment_id → equipment.id` | `RESTRICT` | оборудование с историей заявок не удаляется, даже если все заявки уже закрыты, — иначе теряется история обслуживания            |
+| `request_status_history.request_id → maintenance_requests.id` | `CASCADE`  | запись истории не имеет смысла без заявки; сами записи истории не редактируются и не удаляются по отдельности                   |
+| `request_assignees.request_id → maintenance_requests.id` | `CASCADE`  | назначение бессмысленно без заявки                                                                                              |
+| `request_assignees.technician_id → technicians.id` | `RESTRICT` | специалиста с активными или прошлыми назначениями не удалить                                                                    |
+
+`(request_id, technician_id)` в `request_assignees` уникальна на уровне БД — один специалист не может быть назначен на одну заявку дважды.
+
+Правило `RESTRICT` на `maintenance_requests.equipment_id` строже бизнес-правила "нельзя удалить оборудование с незакрытыми заявками" (`new`/`in_progress`): сервис проверяет именно это и отвечает понятным `409`, а ограничение внешнего ключа — вторая линия защиты на случай оборудования с историей только закрытых заявок, где терять данные обслуживания тоже не хочется.
+
+Два места, где решение сознательно отступает от буквального перечня полей в задании:
+
+- у `equipment` есть собственные `lat`/`lon` в дополнение к координатам площадки. Это не дублирование: площадка описывает территорию, координаты оборудования — точное размещение конкретной единицы на ней. Заодно это сохраняет формат ответа `GET /api/equipment/:id`, на котором завязан `.../weather`, — при переносе на PostgreSQL внешний контракт не должен был измениться.
+- `maintenance_requests.author` необязателен. В проекте нет аутентификации, а обязательное поле сломало бы старые запросы на создание заявки из коллекции Кейса 2.
+
+## Миграции и сиды
+
+Схема создаётся только миграциями (`sequelize-cli`); `sequelize.sync({ force: true })` или ручное создание таблиц не используются. Миграции лежат в [src/db/migrations](src/db/migrations), сиды — в [src/db/seeders](src/db/seeders), порядок применения в обоих случаях — по имени файла (временная метка в начале). Таблицы создаются в порядке зависимостей: `sites → equipment → equipment_passports → technicians → maintenance_requests → request_status_history → request_assignees`.
+
+```bash
+  npm run db:migrate          # применить все миграции
+  npm run db:migrate:undo     # откатить последнюю
+  npm run db:migrate:undo:all # откатить все миграции
+  npm run db:seed:all         # наполнить демонстрационными данными
+  npm run db:seed:undo:all    # удалить демонстрационные данные
+  npm run db:import-legacy    # перенести data/equipment.json и data/requests.json из Кейса 2, если они есть
+```
+
+У каждой миграции рабочий откат: помимо `DROP TABLE`, он ещё и удаляет Postgres-типы `ENUM`, которые сама же миграция создала при накате, — без этого повторный `db:migrate` после отката падает с ошибкой "type already exists". Цикл «применить всё → откатить всё → применить снова» проверен на реальном Postgres и проходит без ошибок.
+
+`src/db/config.cjs` и [.sequelizerc](.sequelizerc) — файлы с расширением `.cjs`, а не `.js`: в `package.json` стоит `"type": "module"`, а `sequelize-cli` загружает конфиг через `require()`, которому нужен явно CommonJS-файл.
+
 ## Модель данных
 
 ### Оборудование (equipment)
 
-| Поле           | Тип                                                           | Комментарий                 |
-| -------------- | ------------------------------------------------------------- | --------------------------- |
-| `id`           | string (uuid)                                                 | генерируется сервером       |
-| `name`         | string, 3–100 символов                                        | обязательное                |
-| `type`         | `turbine` \| `inverter` \| `sensor` \| `substation`           |                             |
-| `serialNumber` | string                                                        | уникален в пределах системы |
-| `location`     | `{ lat: number, lon: number }`                                |                             |
-| `status`       | `operational` \| `maintenance` \| `fault` \| `decommissioned` |                             |
-| `installedAt`  | ISO-дата                                                      | не в будущем                |
+| Поле           | Тип                                                           | Комментарий                          |
+| -------------- | ------------------------------------------------------------- | ------------------------------------- |
+| `id`           | string (uuid)                                                 | генерируется сервером                |
+| `siteId`       | string (uuid)                                                 | ссылка на площадку, обязательное      |
+| `name`         | string, 3–100 символов                                        | обязательное                         |
+| `type`         | `turbine` \| `inverter` \| `sensor` \| `substation`           |                                       |
+| `serialNumber` | string                                                        | уникален в пределах системы          |
+| `location`     | `{ lat: number, lon: number }`                                |                                       |
+| `status`       | `operational` \| `maintenance` \| `fault` \| `decommissioned` |                                       |
+| `installedAt`  | ISO-дата                                                      | не в будущем                         |
+| `passport`     | `{ manufacturer, model, ratedPower, lastInspectionDate } \| null` | паспорт оборудования, если заведён |
+
+Площадка (`GET /api/sites`) и специалист (`GET /api/technicians`) — простые справочники, отдаются списком без пагинации: `{ id, name, code, region, location }` и `{ id, fullName, specialization, personnelNumber }` соответственно. Отдельных эндпоинтов на создание/изменение у них нет — заполняются сидами.
 
 ### Заявка на обслуживание (maintenance request)
 
@@ -80,6 +216,8 @@ REST API для учёта оборудования производственн
 | `priority`                | `low` \| `medium` \| `high` \| `critical`      |                                            |
 | `status`                  | `new` \| `in_progress` \| `done` \| `rejected` | по умолчанию `new`, проставляется сервером |
 | `plannedAt`               | ISO-дата-время                                 | необязательное                             |
+| `author`                  | string, до 150 символов                        | необязательное, кто завёл заявку           |
+| `assignees`               | `Array<{ technicianId, fullName, role, plannedHours }>` | назначенная бригада, `role` — `lead` \| `member` |
 | `createdAt` / `updatedAt` | ISO-дата-время                                 | проставляются сервером                     |
 
 ### Переходы статуса заявки
@@ -90,7 +228,35 @@ REST API для учёта оборудования производственн
   in_progress → rejected
 ```
 
-Из `done` и `rejected` переходы запрещены. Попытка недопустимого перехода — `409 CONFLICT`. Смена статуса выполняется только через `PATCH /api/requests/:id/status`; в общем `PATCH /api/requests/:id` поле `status` игнорируется, как и `id`/`createdAt`/`updatedAt`.
+Из `done` и `rejected` переходы запрещены. Попытка недопустимого перехода — `409 CONFLICT`. Смена статуса выполняется только через `PATCH /api/requests/:id/status`; в общем `PATCH /api/requests/:id` поле `status` игнорируется, как и `id`/`createdAt`/`updatedAt`. Перевод в `in_progress` без назначенной бригады — тоже `409`.
+
+Смена статуса и запись в историю выполняются одной транзакцией с блокировкой строки заявки (`SELECT ... FOR UPDATE`): при ошибке откатывается всё, а при одновременных запросах к одной заявке второй дожидается первого и заново проверяет условие перехода по уже актуальному статусу.
+
+### История статуса заявки
+
+`GET /api/requests/:id/history` возвращает список переходов в хронологическом порядке. Запись не создаётся при создании заявки (там нет перехода, статус сразу `new`) — только на реальных сменах статуса.
+
+| Поле                            | Тип                     | Комментарий               |
+| -------------------------------- | ------------------------ | -------------------------- |
+| `id`                              | string (uuid)             |                            |
+| `requestId`                       | string (uuid)             |                            |
+| `previousStatus` / `newStatus`    | статус заявки             |                            |
+| `changedBy`                       | string \| null            | необязательное поле `PATCH .../status` |
+| `comment`                         | string \| null            | необязательное поле `PATCH .../status` |
+| `changedAt`                       | ISO-дата-время            |                            |
+
+### Назначение бригады
+
+`POST /api/requests/:id/assignees` заменяет бригаду целиком: снимает прежний состав и добавляет новый — одной транзакцией. Тело:
+
+```json
+  { "assignees": [
+    { "technicianId": "...", "role": "lead", "plannedHours": 8 },
+    { "technicianId": "...", "role": "member", "plannedHours": 4 }
+  ] }
+```
+
+Требование — ровно один `lead` в списке, иначе `422` и откат без изменений. Несуществующий специалист — `404`. Повтор одного `technicianId` в списке — `409` (уникальность пары «заявка — специалист» на уровне БД). `DELETE /api/requests/:id/assignees/:userId` снимает одного специалиста; если он не был назначен — `404`.
 
 ## Эндпоинты
 
@@ -110,8 +276,15 @@ REST API для учёта оборудования производственн
 | PATCH  | `/api/requests/:id`           | редактирование полей заявки (кроме статуса)                            |
 | PATCH  | `/api/requests/:id/status`    | смена статуса с проверкой допустимости перехода                        |
 | DELETE | `/api/requests/:id`           | удаление заявки                                                        |
+| GET    | `/api/requests/:id/history`   | история изменений статуса заявки                                       |
+| POST   | `/api/requests/:id/assignees` | назначение бригады на заявку                                           |
+| DELETE | `/api/requests/:id/assignees/:userId` | снятие специалиста с заявки                                    |
+| GET    | `/api/sites`                  | список площадок                                                        |
+| GET    | `/api/sites/:id/summary`      | сводка по площадке: заявки по статусам и приоритетам, среднее время закрытия |
+| GET    | `/api/technicians`            | список специалистов                                                    |
+| GET    | `/api/reports/equipment-load` | нагрузка на оборудование: число заявок, трудозатраты, дата последнего обслуживания |
 
-Удаление оборудования запрещено (`409`), пока по нему остаются заявки в статусе `new` или `in_progress`.
+Удаление оборудования запрещено (`409`), пока по нему остаются заявки в статусе `new` или `in_progress` — а если по нему вообще есть заявки (в том числе только закрытые), удаление заблокирует уже внешний ключ, тоже `409`: см. [Схема базы данных](#схема-базы-данных).
 
 ### Список: фильтры, сортировка, пагинация
 
@@ -120,11 +293,13 @@ REST API для учёта оборудования производственн
 - `type`, `status` — фильтры по точному совпадению;
 - `sort` — `name` \| `installedAt` \| `status` \| `type` (по умолчанию `installedAt`);
 - `order` — `asc` \| `desc` (по умолчанию `asc`);
-- `page`, `limit` — пагинация (по умолчанию `1` и `20`, максимум `limit` — `100`).
+- `page`, `limit` — пагинация (по умолчанию `1` и `20`, максимум `limit` — `100`, максимум `page` — `10000`).
 
-Некорректные значения (например, `page=0` или неизвестный `type`) отклоняются с кодом `422`.
+Некорректные значения (например, `page=0`, `page=100000` или неизвестный `type`) отклоняются с кодом `422`. Поля `sort` и допустимые значения фильтров — фиксированный список (`zod enum`), значение из query-строки никогда не попадает в `ORDER BY` или `WHERE` напрямую.
 
 `GET /api/requests` принимает `status`, `priority`, `equipmentId`, `createdFrom`/`createdTo` (диапазон по `createdAt`), `sort` (`createdAt` \| `updatedAt` \| `priority` \| `plannedAt` \| `status`, по умолчанию `createdAt`), `order` (по умолчанию `desc`), `page`, `limit`. `GET /api/equipment/:id/requests` — те же фильтры/сортировка/пагинация, кроме `equipmentId` (он уже задан путём).
+
+`GET /api/reports/equipment-load` принимает `createdFrom`/`createdTo` (период по дате создания заявки) и `minRequests` (минимум заявок у единицы оборудования, по умолчанию `0` — попадают все, включая простаивающее оборудование без единой заявки за период); без пагинации, строк не больше, чем единиц оборудования.
 
 ## Формат ответа
 
@@ -162,19 +337,19 @@ REST API для учёта оборудования производственн
 
 ### Примеры запросов
 
-Создание оборудования:
+Создание оборудования (`siteId` берётся из `GET /api/sites`):
 
 ```bash
   curl -X POST localhost:3000/api/equipment \
     -H "Content-Type: application/json" \
-    -d '{"name":"Турбина №1","type":"turbine","serialNumber":"SN-001","location":{"lat":55.75,"lon":37.62},"status":"operational","installedAt":"2023-05-01"}'
+    -d '{"siteId":"be909c99-a34c-4acf-9abc-70663eb27f8d","name":"Турбина №1","type":"turbine","serialNumber":"SN-001","location":{"lat":55.75,"lon":37.62},"status":"operational","installedAt":"2023-05-01"}'
 ```
 
 ```json
   HTTP/1.1 201 Created
   Location: /api/equipment/6b0df916-a189-422d-9353-9e9c38374491
 
-  { "data": { "id": "6b0df916-a189-422d-9353-9e9c38374491", "name": "Турбина №1", "type": "turbine", "serialNumber": "SN-001", "location": { "lat": 55.75, "lon": 37.62 }, "status": "operational", "installedAt": "2023-05-01" } }
+  { "data": { "id": "6b0df916-a189-422d-9353-9e9c38374491", "siteId": "be909c99-a34c-4acf-9abc-70663eb27f8d", "name": "Турбина №1", "type": "turbine", "serialNumber": "SN-001", "location": { "lat": 55.75, "lon": 37.62 }, "status": "operational", "installedAt": "2023-05-01", "passport": null } }
 ```
 
 Попытка недопустимого перехода статуса заявки (`new → done`, минуя `in_progress`):
@@ -188,6 +363,45 @@ REST API для учёта оборудования производственн
   HTTP/1.1 409 Conflict
 
   { "error": { "code": "CONFLICT", "message": "Недопустимый переход статуса: new -> done", "requestId": "..." } }
+```
+
+Назначение бригады без ведущего специалиста:
+
+```bash
+  curl -X POST localhost:3000/api/requests/{id}/assignees \
+    -H "Content-Type: application/json" \
+    -d '{"assignees":[{"technicianId":"...","role":"member","plannedHours":4}]}'
+```
+
+```json
+  HTTP/1.1 422 Unprocessable Content
+
+  { "error": { "code": "VALIDATION_ERROR", "message": "В бригаде должен быть ровно один специалист с ролью lead", "requestId": "..." } }
+```
+
+Сводка по площадке:
+
+```json
+  HTTP/1.1 200 OK
+
+  {
+    "data": {
+      "siteId": "be909c99-a34c-4acf-9abc-70663eb27f8d",
+      "requestsByStatus": { "new": 3, "in_progress": 3, "done": 4, "rejected": 2 },
+      "requestsByPriority": { "low": 6, "medium": 3, "high": 3, "critical": 0 },
+      "averageClosingTimeHours": 152
+    }
+  }
+```
+
+Нагрузка на оборудование (`GET /api/reports/equipment-load?minRequests=1`):
+
+```json
+  HTTP/1.1 200 OK
+
+  { "data": [
+    { "equipmentId": "...", "equipmentName": "Турбина №1", "requestsCount": 3, "closedRequestsCount": 2, "totalPlannedHours": 12, "lastMaintenanceAt": "2026-09-23T11:16:21.654Z" }
+  ] }
 ```
 
 ### Коды ошибок
@@ -258,10 +472,16 @@ REST API для учёта оборудования производственн
 
 **Секреты.** `.env` в `.gitignore`, в репозитории — только `.env.example` без реальных значений. В production (`NODE_ENV=production`) обработчик ошибок не отдаёт клиенту стек-трейсы и внутренние сообщения (см. раздел «Формат ответа»).
 
+**База данных.** Учётные данные — только в переменных окружения, в коде не встречаются. Прямой SQL есть только в отчёте по нагрузке на оборудование; он выполняется с bind-параметрами (`$1`, `$2`, ...), конкатенация пользовательского ввода в текст запроса не используется — значения `createdFrom`/`createdTo`/`minRequests` никогда не попадают в SQL-строку напрямую. Поля сортировки и фильтрации на списочных эндпоинтах — фиксированный список через `zod enum`, а не значение из запроса. `limit` и `page` ограничены сверху (`100` и `10000`), значения вне диапазона — `422`.
+
+В `docker-compose.yml` роль, под которой подключается приложение, — она же администратор кластера (так проще для учебного проекта: миграции и приложение используют одни и те же переменные `DB_USER`/`DB_PASSWORD`). В продакшене это стоит разделить: отдельная роль без `CREATEDB`/`CREATEROLE` с правами только на таблицы своей схемы для приложения, и отдельная — с правами на DDL — только для миграций.
+
 ## Тестирование в Postman
 
-Коллекция лежит в [docs/postman/equipment-tickets-api.postman_collection.json](docs/postman/equipment-tickets-api.postman_collection.json) и использует переменные `{{baseUrl}}`, `{{equipmentId}}` и `{{requestId}}` — они сохраняются автоматически из ответов на создание ресурсов и переиспользуются в последующих запросах папок Equipment и Requests.
+Коллекция лежит в [docs/postman/equipment-tickets-api.postman_collection.json](docs/postman/equipment-tickets-api.postman_collection.json), рассчитана на последовательный запуск (Collection Runner) и использует переменные `{{baseUrl}}`, `{{equipmentId}}`, `{{requestId}}`, `{{siteId}}`, `{{technicianId}}` и `{{secondTechnicianId}}` — они сохраняются автоматически из ответов на создание и списочные запросы и переиспользуются дальше по коллекции. Папка Requests, прежде чем перевести заявку в `in_progress`, сначала показывает отказ без бригады (`409`), потом назначает бригаду — это новое бизнес-правило Кейса 3, единственное место, где оно меняет порядок шагов старого сценария Кейса 2; сам сценарий по-прежнему проходит целиком.
+
+Негативные сценарии в коллекции: несуществующее оборудование при создании заявки (`404`), дубль `serialNumber` (`409`), невалидные данные (`422`), несуществующий id (`404`), недопустимый переход статуса (`409`), пустое тело `PATCH` (`422`), перевод в `in_progress` без бригады (`409`), назначение несуществующего специалиста (`404`), повторный специалист в одной заявке на назначение (`409`), бригада без ведущего (`422`), удаление оборудования с открытой заявкой (`409`), снятие уже снятого специалиста (`404`).
 
 ## Инструменты разработки
 
-Часть рутинных задач — черновик структуры проекта и конфигов, оформление README и Postman-коллекции, перевод сообщений валидации на русский, мелкие правки вроде удаления неиспользуемого класса ошибки — делал с помощью ИИ-агента, чтобы не тратить на них время вручную. Архитектурные решения, бизнес-логику и итоговую проверку оставлял за собой.
+Рутинные и шаблонные задачи — оформление README и Postman-коллекции, перевод текстов сообщений на русский — делал с помощью ИИ-агента: это осознанный выбор, чтобы не тратить время на техническую рутину и не в ущерб качеству. Проектирование схемы данных, миграции, бизнес-логику, транзакции и итоговую проверку каждого кейса делал и защищал сам.

@@ -8,7 +8,26 @@ function zeroMap(keys) {
   return Object.fromEntries(keys.map((key) => [key, 0]));
 }
 
+function toDto(site) {
+  const plain = site.get({ plain: true });
+  return {
+    id: plain.id,
+    name: plain.name,
+    code: plain.code,
+    region: plain.region,
+    location: { lat: Number(plain.lat), lon: Number(plain.lon) },
+  };
+}
+
 export const siteRepository = {
+  async findAll() {
+    const sites = await Site.findAll({
+      attributes: ['id', 'name', 'code', 'region', 'lat', 'lon'],
+      order: [['name', 'ASC']],
+    });
+    return sites.map(toDto);
+  },
+
   async findById(id) {
     return Site.findByPk(id, { attributes: ['id'] });
   },
